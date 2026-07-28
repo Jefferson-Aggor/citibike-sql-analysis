@@ -58,9 +58,42 @@ FROM city_bike_trip_data
 GROUP BY day_type, member_casual
 ORDER BY day_type, member_casual;
 
+SELECT *
+FROM city_bike_trip_data 
+LIMIT 5
+;
+
 -- 6. For each bike type, what are the longest and shortest trips — including the stations, the timestamps, and the duration?
+WITH ride_details AS (
+SELECT rideable_type, 
+	start_station_name,
+	end_station_name, 
+	started_at,
+	ended_at,
+    TIMESTAMPDIFF(minute, started_at, ended_at) AS time_diff
+FROM city_bike_trip_data
+WHERE TIMESTAMPDIFF(minute, started_at, ended_at) BETWEEN 1 AND 5*60
+), 
 
+numbered AS (
+SELECT *,
+	ROW_NUMBER() OVER(PARTITION BY rideable_type ORDER BY TIMESTAMPDIFF(minute, started_at, ended_at) DESC) AS rn_high,
+    ROW_NUMBER() OVER(PARTITION BY rideable_type ORDER BY TIMESTAMPDIFF(minute, started_at, ended_at) ASC) AS rn_low
+    
+    FROM ride_details
+)
 
-
-
-
+SELECT 
+CASE 
+	WHEN rn_high = 1 THEN 'longest' 
+    ELSE 'shortest'
+END AS duration,
+	rideable_type, 
+	start_station_name,
+	end_station_name, 
+	started_at,
+	ended_at,
+    TIMESTAMPDIFF(minute, started_at, ended_at) AS time_diff
+FROM numbered
+WHERE rn_high = 1 OR rn_low = 1
+ORDER BY duration
