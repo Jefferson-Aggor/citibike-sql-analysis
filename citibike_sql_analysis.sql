@@ -63,7 +63,8 @@ FROM city_bike_trip_data
 LIMIT 5
 ;
 
--- 6. For each bike type, what are the longest and shortest trips — including the stations, the timestamps, and the duration?
+-- 6. For each bike type, what are the longest and shortest trips — including the stations,
+-- the timestamps, and the duration?
 WITH ride_details AS (
 SELECT rideable_type, 
 	start_station_name,
@@ -97,3 +98,60 @@ END AS duration,
 FROM numbered
 WHERE rn_high = 1 OR rn_low = 1
 ORDER BY duration
+;
+
+-- 7. For each of the top 20 stations, what is its single busiest hour of the day?
+WITH hourly_counts AS (
+    SELECT start_station_name AS station,
+           HOUR(started_at)   AS hour_of_day,
+           COUNT(*)           AS trips
+    FROM city_bike_trip_data
+    WHERE start_station_name != ''
+    GROUP BY station, hour_of_day
+),
+with_totals AS (
+    SELECT *,
+           SUM(trips) OVER (PARTITION BY station) AS total_trips,
+           ROW_NUMBER() OVER (PARTITION BY station ORDER BY trips DESC) AS rn
+    FROM hourly_counts
+)
+SELECT station,
+       hour_of_day AS busiest_hour,
+       trips       AS trips_in_hour,
+       total_trips,
+       rn
+FROM with_totals
+WHERE rn = 1
+ORDER BY total_trips DESC
+LIMIT 20; 
+
+-- 8. For each start station, what are its top 3 destination stations?
+WITH station_details AS (
+SELECT 
+	start_station_name AS station,
+    end_station_name AS destination,
+	COUNT(*) AS trips
+    FROM city_bike_trip_data
+    WHERE start_station_name != '' AND end_station_name != ''
+    GROUP BY start_station_name, end_station_name
+),
+	details AS (
+    SELECT *,
+    SUM(trips) OVER(PARTITION BY station) as total_trips,
+    RANK() OVER(PARTITION BY station ORDER BY trips DESC) as rn
+    FROM station_details
+    )
+    
+    SELECT station, destination, trips, total_trips
+    FROM details
+    WHERE rn <=3
+    ORDER BY total_trips DESC, station, rn;
+
+
+-- 9. What's the cumulative number of trips across the month, day by day?
+-- 10. What's the 7-day rolling average of daily trips?
+-- 11. Week over week, which stations grew fastest?
+-- 12. Which stations have the biggest imbalance between departures and arrivals?
+-- 13. What are the ten most common station-to-station routes, and what fraction of trips are round trips?
+-- What's the median trip duration, and the 90th percentile? How do those compare to the mean, and what does the difference tell you?
+-- Do casual riders take longer trips at weekends than on weekdays — and does that gap hold for members too?
