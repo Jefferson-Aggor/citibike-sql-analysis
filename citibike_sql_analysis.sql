@@ -147,8 +147,28 @@ SELECT
     WHERE rn <=3
     ORDER BY total_trips DESC, station, rn;
 
-
 -- 9. What's the cumulative number of trips across the month, day by day?
+WITH trips_across_month AS(
+SELECT 
+	DATE(started_at) AS day_of_month,
+    COUNT(*) AS trips
+    FROM city_bike_trip_data
+    GROUP BY DATE(started_at)
+),
+
+cummulative_table AS (
+SELECT * ,
+	SUM(trips) OVER (ORDER BY day_of_month) AS cumulative
+FROM trips_across_month
+)
+SELECT 
+	day_of_month,
+    trips,
+    cumulative
+    FROM cummulative_table
+    ORDER BY day_of_month ASC
+
+
 -- 10. What's the 7-day rolling average of daily trips?
 -- 11. Week over week, which stations grew fastest?
 -- 12. Which stations have the biggest imbalance between departures and arrivals?
