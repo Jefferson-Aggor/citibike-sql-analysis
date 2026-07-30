@@ -1,4 +1,62 @@
+-- D1. Load integrity. 
+SELECT COUNT(*)                AS rows_loaded,
+       COUNT(DISTINCT ride_id) AS distinct_rides
+FROM city_bike_trip_data;
  
+-- D2. Daily coverage. Shows where the split file starts and stops, and whether 14 June is truncated. Decides the upper bound above.
+SELECT DATE(started_at) AS day,
+       COUNT(*)         AS trips
+FROM city_bike_trip_data
+GROUP BY day
+ORDER BY day;
+ 
+-- D3. Cost of the duration filter.
+SELECT COUNT(*) AS excluded_rows,
+       ROUND(100 * COUNT(*) / (SELECT COUNT(*) FROM city_bike_trip_data), 2) AS pct_excluded
+FROM city_bike_trip_data
+WHERE TIMESTAMPDIFF(MINUTE, started_at, ended_at) NOT BETWEEN 1 AND 5*60;
+ 
+-- D4. Blank station names.
+SELECT SUM(start_station_name = '') AS blank_start,
+       SUM(end_station_name   = '') AS blank_end,
+       SUM(start_station_name = '') +  SUM(end_station_name   = '')  AS total
+FROM city_bike_trip_data;
+ 
+-- D5. Do "long trip" and "missing end station" describe the same rows?
+--     If long trips mostly DO have an end station, the not-re-docked reading is wrong and long duration is measuring something else.
+SELECT CASE WHEN end_station_name = '' THEN 'no end station'
+            ELSE 'has end station' END AS ended,
+       CASE WHEN TIMESTAMPDIFF(MINUTE, started_at, ended_at) > 5*60 THEN 'long'
+            WHEN TIMESTAMPDIFF(MINUTE, started_at, ended_at) < 1    THEN 'sub-minute'
+            ELSE 'normal' END          AS length,
+       COUNT(*)                        AS trips,
+       ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (), 2) AS pct
+FROM city_bike_trip_data
+GROUP BY ended, length
+ORDER BY ended, length;
+ 
+-- D6. Missing station name but present coordinates = a dockless e-bike parked
+--     legitimately outside a dock, i.e. a normal completed trip.
+--     Missing both = a genuinely unknown ending.
+SELECT COUNT(*)                 AS no_end_station_rows,
+       SUM(end_lat IS NOT NULL) AS but_has_coordinates,
+       SUM(end_lat IS NULL)     AS no_coordinates_either
+FROM city_bike_trip_data
+WHERE end_station_name = '';
+ 
+-- D7. Evidence for the sub-minute reading: a real ride goes somewhere.
+SELECT CASE WHEN start_station_name = end_station_name THEN 'same station'
+            ELSE 'different station' END AS route,
+       COUNT(*) AS trips
+FROM city_bike_trip_data
+WHERE TIMESTAMPDIFF(MINUTE, started_at, ended_at) < 1
+GROUP BY route;
+
+
+ /* ============================================================================
+   QUESTIONS
+   ========================================================================= */
+   
 -- 1. How many trips are in the table, and what date range do they cover?
 SELECT rideable_type,
        COUNT(*)        AS trips,
@@ -7,11 +65,11 @@ SELECT rideable_type,
        MAX(ended_at)   AS last_end
 FROM city_bike_trip_data
 WHERE started_at >= '2026-06-01'
-  AND started_at <  '2026-06-14'
+  AND started_at <=  '2026-06-14'
 GROUP BY rideable_type WITH ROLLUP;
  
  
--- 2. What share of all trips does each bike type account for, and how does
+-- 2. Share of trips by bike type, and how it differs between members and casual riders
 SELECT rideable_type,
        member_casual,
        COUNT(*) AS trips,
@@ -19,7 +77,7 @@ SELECT rideable_type,
        ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY member_casual), 2) AS pct_within_rider
 FROM city_bike_trip_data
 WHERE started_at >= '2026-06-01'
-  AND started_at <  '2026-06-14'
+  AND started_at <=  '2026-06-14'
 GROUP BY rideable_type, member_casual
 ORDER BY member_casual, rideable_type;
  
@@ -29,7 +87,7 @@ SELECT start_station_name AS station,
        COUNT(*)           AS trips
 FROM city_bike_trip_data
 WHERE started_at >= '2026-06-01'
-  AND started_at <  '2026-06-14'
+  AND started_at <=  '2026-06-14'
   AND start_station_name <> ''
 GROUP BY station
 ORDER BY trips DESC
@@ -39,7 +97,7 @@ SELECT end_station_name AS station,
        COUNT(*)         AS trips
 FROM city_bike_trip_data
 WHERE started_at >= '2026-06-01'
-  AND started_at <  '2026-06-14'
+  AND started_at <=  '2026-06-14'
   AND end_station_name <> ''
 GROUP BY station
 ORDER BY trips DESC
@@ -52,7 +110,7 @@ SELECT HOUR(started_at) AS hour_of_day,
        ROUND(AVG(TIMESTAMPDIFF(MINUTE, started_at, ended_at)), 1) AS avg_duration_min
 FROM city_bike_trip_data
 WHERE started_at >= '2026-06-01'
-  AND started_at <  '2026-06-14'
+  AND started_at <=  '2026-06-14'
   AND TIMESTAMPDIFF(MINUTE, started_at, ended_at) BETWEEN 1 AND 5*60
 GROUP BY hour_of_day
 ORDER BY hour_of_day;
@@ -67,7 +125,7 @@ SELECT CASE WHEN DAYOFWEEK(started_at) IN (1, 7) THEN 'weekend' ELSE 'weekday' E
        ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY member_casual), 1) AS pct_of_rider_trips
 FROM city_bike_trip_data
 WHERE started_at >= '2026-06-01'
-  AND started_at <  '2026-06-14'
+  AND started_at <=  '2026-06-14'
 GROUP BY day_type, member_casual
 ORDER BY day_type, member_casual;
  
@@ -81,7 +139,7 @@ WITH ride_details AS (
            TIMESTAMPDIFF(MINUTE, started_at, ended_at) AS time_diff
     FROM city_bike_trip_data
     WHERE started_at >= '2026-06-01'
-      AND started_at <  '2026-06-14'
+      AND started_at <=  '2026-06-14'
       AND TIMESTAMPDIFF(MINUTE, started_at, ended_at) BETWEEN 1 AND 24*60
 ),
 numbered AS (
@@ -109,7 +167,7 @@ WITH hourly_counts AS (
            COUNT(*)           AS trips
     FROM city_bike_trip_data
     WHERE started_at >= '2026-06-01'
-      AND started_at <  '2026-06-14'
+      AND started_at <=  '2026-06-14'
       AND start_station_name <> ''
     GROUP BY station, hour_of_day
 ),
@@ -136,7 +194,7 @@ WITH station_details AS (
            COUNT(*)           AS trips
     FROM city_bike_trip_data
     WHERE started_at >= '2026-06-01'
-      AND started_at <  '2026-06-14'
+      AND started_at <=  '2026-06-14'
       AND start_station_name <> ''
       AND end_station_name   <> ''
     GROUP BY station, destination
@@ -163,7 +221,7 @@ WITH daily AS (
            COUNT(*)         AS trips
     FROM city_bike_trip_data
     WHERE started_at >= '2026-06-01'
-      AND started_at <  '2026-06-14'
+      AND started_at <=  '2026-06-14'
     GROUP BY day
 ),
 cumulative_table AS (
@@ -182,7 +240,7 @@ WITH daily AS (
            COUNT(*)         AS trips
     FROM city_bike_trip_data
     WHERE started_at >= '2026-06-01'
-      AND started_at <  '2026-06-14'
+      AND started_at <=  '2026-06-14'
     GROUP BY day
 ),
 calc AS (
@@ -211,7 +269,7 @@ WITH weekly_details AS (
            COUNT(*)                        AS trips
     FROM city_bike_trip_data
     WHERE started_at >= '2026-06-01'
-      AND started_at <  '2026-06-14'
+      AND started_at <=  '2026-06-14'
       AND start_station_name <> ''
     GROUP BY station, week
 ),
