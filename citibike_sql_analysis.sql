@@ -191,8 +191,28 @@ SELECT
     ;
 
 -- 11. Week over week, which stations grew fastest?
-
--- 12. Which stations have the biggest imbalance between departures and arrivals?
--- 13. What are the ten most common station-to-station routes, and what fraction of trips are round trips?
--- What's the median trip duration, and the 90th percentile? How do those compare to the mean, and what does the difference tell you?
--- Do casual riders take longer trips at weekends than on weekdays — and does that gap hold for members too?
+WITH weekly_details AS (
+SELECT YEARWEEK(started_at, 3) AS week, start_station_name AS station,
+	COUNT(*) AS trips,
+    MIN(DATE(started_at)) AS week_start
+    FROM city_bike_trip_data
+    WHERE started_at >= '2026-06-01' 
+		AND started_at < '2026-07-01'
+		AND start_station_name != ''
+    GROUP BY start_station_name, YEARWEEK(started_at, 3)
+), calc AS (
+SELECT *,
+	LAG(trips) OVER(PARTITION BY station ORDER BY week) AS prev_trips
+    FROM weekly_details
+)
+SELECT 
+	week_start, 
+	station, 
+	prev_trips, 
+	trips, 
+	trips - prev_trips AS abs_growth, 
+    ROUND(100 * (trips - prev_trips)/prev_trips, 1) AS pct_growth
+FROM calc
+WHERE prev_trips >= 100
+ORDER BY pct_growth DESC
+LIMIT 20;
