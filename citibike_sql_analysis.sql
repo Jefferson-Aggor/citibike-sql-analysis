@@ -167,10 +167,31 @@ SELECT
     cumulative
     FROM cummulative_table
     ORDER BY day_of_month ASC
-
+    ;
 
 -- 10. What's the 7-day rolling average of daily trips?
+WITH daily AS (
+	SELECT DATE(started_at) AS day, 
+	COUNT(*) AS trips
+    FROM city_bike_trip_data
+    WHERE started_at >= '2026-06-01'
+    GROUP BY DATE(started_at)
+),
+calc AS (
+SELECT *,
+	ROUND(AVG(trips) OVER(
+    ORDER BY day 
+    ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 1) AS rolling_7day
+FROM daily
+)
+SELECT 
+	day, trips, rolling_7day
+    FROM calc
+    ORDER BY day
+    ;
+
 -- 11. Week over week, which stations grew fastest?
+
 -- 12. Which stations have the biggest imbalance between departures and arrivals?
 -- 13. What are the ten most common station-to-station routes, and what fraction of trips are round trips?
 -- What's the median trip duration, and the 90th percentile? How do those compare to the mean, and what does the difference tell you?
